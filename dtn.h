@@ -9,25 +9,25 @@
 #else
 #define DTN_L_COPIES DTN_CONF_DEFAULT_L_COPIES
 #endif
-/*
-#define DTN_COMMON_ATTRIBUTES \
-				{ PACKETBUF_ADDR_ESENDER, PACKETBUF_ADDRSIZE }, \
-				{ PACKETBUF_ADDR_ERECEIVER, PACKETBUF_ADDRSIZE }, \
-
-         { PACKETBUF_ATTR_EPACKET_ID, PACKETBUF_ATTR_BIT * 4 }, \
-#define DTN_COMMON_ATTRIBUTES \
-				{ PACKETBUF_ADDR_ESENDER, PACKETBUF_ADDRSIZE }, \
-
-#define DTN_SPRAY_ATTRIBUTES DTN_COMMON_ATTRIBUTES BROADCAST_ATTRIBUTES
-#define DTN_REQUEST_ATTRIBUTES DTN_COMMON_ATTRIBUTES UNICAST_ATTRIBUTES
-#define DTN_HANDOFF_ATTRIBUTES DTN_COMMON_ATTRIBUTES RUNICAST_ATTRIBUTES
-*/
 
 #define DTN_QUEUE_MAX 5
 #define DTN_MAX_LIFETIME 10
 #define DTN_SPRAY_CHANNEL 128 
 #define DTN_SPRAY_DELAY 2
 #define DTN_RTX 3
+
+#define DEBUG 1
+#if DEBUG
+#include <stdio.h>
+#define PRINTF(...) printf(__VA_ARGS__)
+#else
+#define PRINTF(...)
+#endif
+#ifdef CONTIKI_TARGET_ORISENPRIME
+#define PRINT2ADDR(addr) PRINTF("%02x%02x:%02x%02x",(addr)->u8[3], (addr)->u8[2], (addr)->u8[1], (addr)->u8[0])
+#else
+#define PRINT2ADDR(addr) PRINTF("%02x%02x",(addr)->u8[1], (addr)->u8[0])
+#endif
 struct proto_header {
   uint8_t version;
   uint8_t magic[2];
@@ -43,7 +43,7 @@ struct msg_header {
 struct dtn_conn;
 
 struct dtn_callbacks {
-	void (* recv)(struct dtn_conn *c, const rimeaddr_t *from);
+	void (* recv)(struct dtn_conn *c, const rimeaddr_t *from, uint16_t packet_id);
 };
 
 struct dtn_conn {
@@ -54,7 +54,6 @@ struct dtn_conn {
 	struct packetqueue *q;
 	uint8_t seqno;
   struct ctimer t;
-  uint16_t lock;
   struct queuebuf *handoff_qb;
   struct msg_header *hdr;
 };
