@@ -15,7 +15,7 @@
 #define DTN_SPRAY_CHANNEL 128 
 #define DTN_SPRAY_DELAY 2
 #define DTN_RTX 3
-
+#define DTN_HDR_VERSION 1
 #define DEBUG 1
 #if DEBUG
 #include <stdio.h>

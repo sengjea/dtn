@@ -46,7 +46,9 @@
 #include "dev/button-sensor.h"
 #endif
 
-#define TOTAL_MOTES 24
+#define TOTAL_MOTES 64
+#define DTN_BUTTON_FIRE
+
 #ifdef CONTIKI_TARGET_ORISENPRIME
 #define FLASH_LED(l) {leds_on(l); clock_delay_msec(50); leds_off(l); clock_delay_msec(50);}
 #else
@@ -94,7 +96,6 @@ PROCESS_THREAD(dtn_process, ev, data)
   dtn_open(&dtn_connection, DTN_SPRAY_CHANNEL, &dtn_cb);
   //set_power(0x02);
   while(1) {
-#define DTN_BUTTON_FIRE
 #ifndef DTN_BUTTON_FIRE
     etimer_set(&et, CLOCK_SECOND * 12 + random_rand() % (CLOCK_SECOND * 6));
     PROCESS_WAIT_EVENT_UNTIL(etimer_expired(&et));
@@ -102,10 +103,10 @@ PROCESS_THREAD(dtn_process, ev, data)
     PROCESS_WAIT_EVENT_UNTIL(ev   == sensors_event &&
 		     data == &button_sensor);
 #endif
-    packetbuf_copyfrom("DTN", 4);
-    make_random_addr(&dest_addr);
-    dtn_send(&dtn_connection, &dest_addr);
-    FLASH_LED(LEDS_GREEN);
+      packetbuf_copyfrom("DTN", 4);
+      make_random_addr(&dest_addr);
+      dtn_send(&dtn_connection, &dest_addr);
+      FLASH_LED(LEDS_GREEN);
   }
 
   PROCESS_END();
