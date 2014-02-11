@@ -376,9 +376,8 @@ dtn_send(struct dtn_conn *c, const rimeaddr_t *dest)
   rimeaddr_copy(&msg.esender,&rimeaddr_node_addr);
   prepend_header(c,&msg);
   if (packetqueue_enqueue_packetbuf(c->q, DTN_MAX_LIFETIME * CLOCK_SECOND, c)) {
-    print_packetbuf(c,"dtn_send");
-  } else {
     c->seqno = c->seqno + 1;
+    print_packetbuf(c,"dtn_send");
   }
   dtn_service_queue(c);
 }
@@ -393,8 +392,10 @@ dtn_broadcast(struct dtn_conn *c)
     c->hdr->num_copies = c->hdr->num_copies - 1;
     packetqueue_enqueue_packetbuf(c->q, DTN_MAX_LIFETIME * CLOCK_SECOND, c);
     c->hdr->num_copies = c->hdr->num_copies + 1;
-  } else {
-    packetqueue_enqueue_packetbuf(c->q, DTN_MAX_LIFETIME * CLOCK_SECOND, c);
+
+//} else if (c->hdr->num_copies > 0) {  
+//} else if (packetqueue_len(c->q) < DTN_QUEUE_MAX - 1) {
+//    packetqueue_enqueue_packetbuf(c->q, DTN_MAX_LIFETIME * CLOCK_SECOND, c);
   }
   print_packetbuf(c,"dtn_broadcast");
   broadcast_send(&c->spray_c);

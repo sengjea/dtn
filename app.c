@@ -46,8 +46,8 @@
 #include "dev/button-sensor.h"
 #endif
 
-#define TOTAL_MOTES 64
-#define DTN_BUTTON_FIRE
+#define TOTAL_MOTES 32
+//#define DTN_BUTTON_FIRE
 
 #ifdef CONTIKI_TARGET_ORISENPRIME
 #define FLASH_LED(l) {leds_on(l); clock_delay_msec(50); leds_off(l); clock_delay_msec(50);}
