@@ -93,18 +93,14 @@ is_from_me(struct dtn_conn *c)
  * Packet Queue functions
  * ---------------------------------------------------------------------------*/
 
-  struct packetqueue_item *
-packetqueue_next(struct packetqueue_item *i)
-{
-  return list_item_next(i);
-}
+  
   static int
 is_duplicate(struct dtn_conn *c, struct packetqueue_item *p)
 {
   struct msg_header *qb_hdr;
   struct queuebuf *qb = packetqueue_queuebuf(p);
   if (qb == NULL) return 0;
-  qb_hdr = queuebuf_dataptr(packetqueue_queuebuf(p));
+  qb_hdr = queuebuf_dataptr(qb);
   return (qb_hdr->epacketid == c->hdr->epacketid &&
       rimeaddr_cmp(&(qb_hdr->esender), &(c->hdr->esender)));
 }
@@ -114,16 +110,66 @@ is_from_destination(struct dtn_conn *c)
   return (rimeaddr_cmp(&(c->hdr->ereceiver),
         packetbuf_addr(PACKETBUF_ADDR_SENDER)));
 }
+  
+  struct packetqueue_item *
+packetqueue_next(struct packetqueue_item *i)
+{
+  return list_item_next(i);
+}
+  void
+packetqueue_refresh(struct packetqueue_item *i)
+{
+  ctimer_reset(&i->lifetimer);
+}
+  
+  void
+packetqueue_remove_item(struct packetqueue_item *i)
+{
+  struct packetqueue *q = i->queue;
+  list_remove(*q->list, i);
+  queuebuf_free(i->buf);
+  ctimer_stop(&i->lifetimer);
+  memb_free(q->memb, i);
+}
   static struct packetqueue_item *
 find_item_in_queue(struct dtn_conn *c)
 {
-  struct queuebuf *qb;
   struct packetqueue_item *p;
   for (p = packetqueue_first(c->q); p != NULL; p = packetqueue_next(p)) {
     if (is_duplicate(c,p)) return p;
   }
   return NULL;
 
+}
+  static struct packetqueue_item *
+find_least_critical(struct dtn_conn *c)
+{
+  uint16_t i,v = DTN_L_COPIES; 
+  struct packetqueue_item *p, *l = NULL;
+  struct msg_header *qb_hdr;
+  struct queuebuf *qb;
+  i = 1;
+  for (p = packetqueue_first(c->q); p != NULL; p = packetqueue_next(p)) {
+    qb = packetqueue_queuebuf(p);
+    if (qb == NULL) continue;
+    qb_hdr = queuebuf_dataptr(qb);
+    if (qb_hdr->num_copies * i < v) {
+      v = qb_hdr->num_copies * i;
+      l = p;
+    }
+    i++;
+  }
+  return l;
+}
+  
+  static int
+dtn_enqueue_packetbuf(struct dtn_conn *c)
+{
+  struct packetqueue_item *i = find_least_critical(c);
+  if (packetqueue_len(c->q) >= DTN_QUEUE_MAX && i != NULL) {
+    packetqueue_remove_item(i); 
+  }
+  return packetqueue_enqueue_packetbuf(c->q, DTN_MAX_LIFETIME * CLOCK_SECOND, c);
 }
 
 /*
@@ -212,8 +258,7 @@ wind_timer(struct dtn_conn *c)
   struct packetqueue_item *p = packetqueue_first(c->q);
   if (p != NULL && ctimer_expired(&c->t)) {
     PRINTF("wind_timer\n");
-    int8_t d = (DTN_MAX_LIFETIME - DTN_SPRAY_DELAY) / packetqueue_len(c->q);
-    ctimer_set(&c->t, (d > 0 ? d : 1) * CLOCK_SECOND, dtn_service_queue, c);
+    ctimer_set(&c->t, DTN_SPRAY_DELAY * CLOCK_SECOND, dtn_service_queue, c);
   }
   print_packetqueue(c);  
 }
@@ -228,10 +273,11 @@ sent_handoff(struct runicast_conn *ru_c, const rimeaddr_t *to , uint8_t rtx)
   if (c->handoff_qb != NULL) {
     //TODO: What if queuebuf dies before this?
     PRINTF("sent_handoff\n");
-    print_queuebuf(c->handoff_qb);
     qb_hdr = queuebuf_dataptr(c->handoff_qb);
-    if (qb_hdr->num_copies > 1)
-      qb_hdr->num_copies = qb_hdr->num_copies/2;
+    if (qb_hdr->num_copies > 1) {
+      qb_hdr->num_copies -= qb_hdr->num_copies/2;
+    }
+    print_queuebuf(c->handoff_qb);
   }
   c->handoff_qb = NULL;
 }
@@ -273,26 +319,22 @@ recv_request(struct unicast_conn *u_c, const rimeaddr_t *from)
   struct dtn_conn *c = (struct dtn_conn *) ((char *) u_c -
       offsetof(struct dtn_conn, request_c));
 
-  struct packetqueue_item *p;
+  struct packetqueue_item *i;
   struct msg_header *qb_hdr;
   c->hdr = packetbuf_dataptr();
   print_packetbuf(c,"recv_request");
-  if (!is_a_dtn_packet(c)) goto fail;
-  p = find_item_in_queue(c);
-  if (p == NULL) goto fail;
+  if (!is_a_dtn_packet(c)) goto done;
+  i = find_item_in_queue(c);
+  if (i == NULL) goto done;
   PRINTF("in_queue ");
   if (is_from_destination(c)) {
     PRINTF("reached ");
-    // Taken from packetqueue_remove:
-    list_remove(*c->q->list, p);
-    queuebuf_free(p->buf);
-    ctimer_stop(&p->lifetimer);
-    memb_free(c->q->memb, p);
+    packetqueue_remove_item(i);
   } else {
-    if (c->handoff_qb != NULL) goto fail;
-    qb_hdr = queuebuf_dataptr(packetqueue_queuebuf(p));
-    if (qb_hdr->num_copies < 2) goto fail;
-    c->handoff_qb = packetqueue_queuebuf(p);
+    if (c->handoff_qb != NULL) goto done;
+    qb_hdr = queuebuf_dataptr(packetqueue_queuebuf(i));
+    if (qb_hdr->num_copies < 2) goto done;
+    c->handoff_qb = packetqueue_queuebuf(i);
     packetbuf_copyfrom(qb_hdr, sizeof(struct msg_header));
     c->hdr = packetbuf_dataptr();
     c->hdr->num_copies = qb_hdr->num_copies/2;
@@ -300,7 +342,7 @@ recv_request(struct unicast_conn *u_c, const rimeaddr_t *from)
     runicast_send(&c->handoff_c, from, DTN_RTX);
     return;
   }
-fail:
+done:
   PRINTF("\n");
 }
 
@@ -313,27 +355,27 @@ recv_spray(struct broadcast_conn *b_c, const rimeaddr_t *from)
       offsetof(struct dtn_conn, spray_c));
   struct msg_header spray_hdr;
   c->hdr = packetbuf_dataptr();
-  if (!is_a_dtn_packet(c)) goto done;
+  if (!is_a_dtn_packet(c)) return;
   memcpy(&spray_hdr, c->hdr, sizeof(struct msg_header));
   print_packetbuf(c,"recv_spray");
-  if (is_from_me(c)) goto done;
+  if (is_from_me(c)) return;
   if (is_for_me(c)) {
     packetbuf_hdrreduce(sizeof(struct msg_header));
     c->cb->recv(c, &(spray_hdr.esender), spray_hdr.epacketid);
+  } else if (spray_hdr.num_copies > 1 && find_item_in_queue(c) == NULL) {
+    c->hdr->num_copies = 0;
+    if (!dtn_enqueue_packetbuf(c)) {
+      print_packetqueue(c);
+      return;
+    }
   }
-  if (c->hdr->num_copies < 2 || find_item_in_queue(c) != NULL) goto done;
-  PRINTF("new ");
+  PRINTF("queued ");
+  //FIXME: Numcopies must not be predetermined!!
   //Setting num_copies to 0 because no handoff received yet.
-  c->hdr->num_copies = 0;
-  if (packetqueue_enqueue_packetbuf(c->q,
-        DTN_MAX_LIFETIME * CLOCK_SECOND, c)) {
-    packetbuf_copyfrom(&spray_hdr, sizeof(struct msg_header));
-    print_packetbuf(c,"request");
-    unicast_send(&c->request_c, from);
-  } else {
-    print_packetqueue(c);
-  }
-done:
+  packetbuf_copyfrom(&spray_hdr, sizeof(struct msg_header));
+  c->hdr = packetbuf_dataptr();
+  print_packetbuf(c,"send_request");
+  unicast_send(&c->request_c, from);
   wind_timer(c);
 }
 /*---------------------------------------------------------------------------*/
@@ -354,7 +396,6 @@ dtn_open(struct dtn_conn *c, uint16_t channel,
   c->q = &dtn_queue;
   c->hdr = packetbuf_hdrptr();
   c->handoff_qb = NULL;
-  c->seqno = 0;
 }
 /*---------------------------------------------------------------------------*/
   void
@@ -368,62 +409,54 @@ dtn_close(struct dtn_conn *c)
   void
 dtn_send(struct dtn_conn *c, const rimeaddr_t *dest)
 {
+  static uint16_t seqno = 0;
   struct msg_header msg = { .protocol = { .version = DTN_HDR_VERSION,
                                           .magic = "SW" },
                             .num_copies = DTN_L_COPIES };
-  msg.epacketid = c->seqno;
+  msg.epacketid = ++seqno;
   rimeaddr_copy(&msg.ereceiver,dest);
   rimeaddr_copy(&msg.esender,&rimeaddr_node_addr);
   prepend_header(c,&msg);
-  if (packetqueue_enqueue_packetbuf(c->q, DTN_MAX_LIFETIME * CLOCK_SECOND, c)) {
-    c->seqno = c->seqno + 1;
+  if (dtn_enqueue_packetbuf(c)) {
     print_packetbuf(c,"dtn_send");
+    broadcast_send(&c->spray_c);
+    wind_timer(c);
+  } else {
+    print_packetqueue(c);
   }
-  dtn_service_queue(c);
 }
 /*---------------------------------------------------------------------------*/
-  void
-dtn_broadcast(struct dtn_conn *c)
-{
- //TODO: What to do?
- // if ((is_from_me(c) && c->hdr->num_copies > 0)
- //     || (!is_from_me(c) && c->hdr->num_copies > 1)) {
-  if (c->hdr->num_copies > 1) {
-    c->hdr->num_copies = c->hdr->num_copies - 1;
-    packetqueue_enqueue_packetbuf(c->q, DTN_MAX_LIFETIME * CLOCK_SECOND, c);
-    c->hdr->num_copies = c->hdr->num_copies + 1;
 
-//} else if (c->hdr->num_copies > 0) {  
-//} else if (packetqueue_len(c->q) < DTN_QUEUE_MAX - 1) {
-//    packetqueue_enqueue_packetbuf(c->q, DTN_MAX_LIFETIME * CLOCK_SECOND, c);
-  }
-  print_packetbuf(c,"dtn_broadcast");
-  broadcast_send(&c->spray_c);
-
-}
   static void
 dtn_service_queue(void *vc)
 {
   struct dtn_conn *c = (struct dtn_conn *) vc;
-  struct packetqueue_item *p = packetqueue_first(c->q);
   struct queuebuf *qb;
-  if (p != NULL) {
-    qb = packetqueue_queuebuf(p);
-    queuebuf_to_packetbuf(qb);
-    c->hdr = packetbuf_dataptr();
-    if (c->hdr->num_copies == 0) {
-      //If num_copies == 0, handoff was never received. resend_request;
-      c->hdr->num_copies = 1;
-      packetqueue_enqueue_packetbuf(c->q, DTN_MAX_LIFETIME * CLOCK_SECOND, c);
-      print_packetbuf(c,"resend_request");
-      rimeaddr_t to;
-      packetbuf_set_datalen(sizeof(struct msg_header));
-      rimeaddr_copy(&to,packetbuf_addr(PACKETBUF_ADDR_SENDER));
-      unicast_send(&c->request_c, &to);
-    } else {
-      dtn_broadcast(c);
-    }
-    packetqueue_dequeue(c->q);
+  struct packetqueue_item *p;
+  for (p = packetqueue_first(c->q); p != NULL; p = packetqueue_next(p)) {
+      qb = packetqueue_queuebuf(p);
+      queuebuf_to_packetbuf(qb);
+      c->hdr = packetbuf_dataptr();
+      if (c->hdr->num_copies == 0) {
+        //If num_copies == 0, handoff was never received. resend_request;
+        c->hdr->num_copies = 1;
+        packetqueue_enqueue_packetbuf(c->q, DTN_MAX_LIFETIME * CLOCK_SECOND, c);
+        print_packetbuf(c,"resend_request");
+        rimeaddr_t to;
+        packetbuf_set_datalen(sizeof(struct msg_header));
+        rimeaddr_copy(&to,packetbuf_addr(PACKETBUF_ADDR_SENDER));
+        packetqueue_refresh(p);
+        unicast_send(&c->request_c, &to);
+      } else {
+        /*
+        if (c->hdr->num_copies > 1) {
+            packetqueue_refresh(p);
+            //packetqueue_dequeue(c->q);
+        }
+        */
+        print_packetbuf(c,"dtn_broadcast");
+        broadcast_send(&c->spray_c);
+      }
   }
   wind_timer(c);
 }

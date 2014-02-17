@@ -47,10 +47,12 @@
 #endif
 
 #define TOTAL_MOTES 32
-//#define DTN_BUTTON_FIRE
-
+//#define ORIGIN_ADDR 18
+#define DEST_ADDR 1
+#define DTN_BUTTON_FIRE
 #ifdef CONTIKI_TARGET_ORISENPRIME
 #define FLASH_LED(l) {leds_on(l); clock_delay_msec(50); leds_off(l); clock_delay_msec(50);}
+#define DTN_LOW_POWER set_power(0x0)
 #else
 #define FLASH_LED(l) //{leds_on(l); clock_delay(400); leds_off(l); clock_delay(400);}
 #endif
@@ -81,30 +83,47 @@ PROCESS_THREAD(dtn_process, ev, data)
   PROCESS_EXITHANDLER(dtn_close(&dtn_connection);)
   PROCESS_BEGIN();
   static rimeaddr_t dest_addr;
+
 #ifdef CONTIKI_TARGET_ORISENPRIME
   SENSORS_ACTIVATE(button_sensor);
   PROCESS_WAIT_EVENT_UNTIL(ev == sensors_event &&
 		     data == &button_sensor);
   random_init(clock_time());
-  make_random_addr(&rimeaddr_node_addr);
 #else
   random_init(rimeaddr_node_addr.u8[0]);
 #endif
+
+#ifdef ORIGIN_ADDR
+  rimeaddr_copy(&rimeaddr_node_addr, &rimeaddr_null);
+  rimeaddr_node_addr.u8[0] = ORIGIN_ADDR;
+#endif
+
+#ifdef DTN_LOW_POWER
+  DTN_LOW_POWER;
+#endif
+
   PRINTF("Init Complete: ");
   PRINT2ADDR(&rimeaddr_node_addr);
   PRINTF("\n");
   dtn_open(&dtn_connection, DTN_SPRAY_CHANNEL, &dtn_cb);
-  //set_power(0x02);
   while(1) {
+
 #ifndef DTN_BUTTON_FIRE
-    etimer_set(&et, CLOCK_SECOND * 12 + random_rand() % (CLOCK_SECOND * 6));
+    etimer_set(&et, CLOCK_SECOND * 3 + random_rand() % (CLOCK_SECOND * 5));
     PROCESS_WAIT_EVENT_UNTIL(etimer_expired(&et));
 #else
+    PRINTF("<press button to fire>\n");
     PROCESS_WAIT_EVENT_UNTIL(ev   == sensors_event &&
 		     data == &button_sensor);
 #endif
-      packetbuf_copyfrom("DTN", 4);
+
+#ifdef DEST_ADDR
+      rimeaddr_copy(&dest_addr, &rimeaddr_null);
+      dest_addr.u8[0] = DEST_ADDR;
+#else
       make_random_addr(&dest_addr);
+#endif
+      packetbuf_copyfrom("Seng", 5);
       dtn_send(&dtn_connection, &dest_addr);
       FLASH_LED(LEDS_GREEN);
   }
