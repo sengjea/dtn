@@ -11,9 +11,9 @@
 #endif
 
 #define DTN_QUEUE_MAX 5
-#define DTN_MAX_LIFETIME 10
+#define DTN_MAX_LIFETIME 60
 #define DTN_SPRAY_CHANNEL 128 
-#define DTN_SPRAY_DELAY 2
+#define DTN_SPRAY_DELAY 4
 #define DTN_RTX 3
 #define DTN_HDR_VERSION 1
 #define DEBUG 1
@@ -55,7 +55,7 @@ struct dtn_conn {
 	uint8_t seqno;
   struct ctimer t;
   struct queuebuf *handoff_qb;
-  struct msg_header *hdr;
+//struct msg_header *hdr;
 };
 
 void dtn_open(struct dtn_conn *c, uint16_t channel,

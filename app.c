@@ -47,7 +47,7 @@
 #endif
 
 #define TOTAL_MOTES 32
-//#define ORIGIN_ADDR 18
+//#define ORIGIN_ADDR 9
 #define DEST_ADDR 1
 #define DTN_BUTTON_FIRE
 #ifdef CONTIKI_TARGET_ORISENPRIME
