@@ -3,6 +3,7 @@
 #include "sys/ctimer.h"
 #include "net/rime/runicast.h"
 #include "net/rime/rimeaddr.h"
+#include <stdio.h>
 
 #ifndef DTN_CONF_DEFAULT_L_COPIES
 #define DTN_L_COPIES 8
@@ -10,22 +11,26 @@
 #define DTN_L_COPIES DTN_CONF_DEFAULT_L_COPIES
 #endif
 
+#define DEBUG 0
 #define DTN_QUEUE_MAX 5
 #define DTN_MAX_LIFETIME 60
 #define DTN_SPRAY_CHANNEL 128 
 #define DTN_SPRAY_DELAY 4
 #define DTN_RTX 3
 #define DTN_HDR_VERSION 1
-#define DEBUG 1
-#if DEBUG
-#include <stdio.h>
+
 #define PRINTF(...) printf(__VA_ARGS__)
+#if DEBUG
+#define DPRINTF(...) printf(__VA_ARGS__)
 #else
-#define PRINTF(...)
+#define DPRINTF(...)
 #endif
+
 #ifdef CONTIKI_TARGET_ORISENPRIME
+#define DPRINT2ADDR(addr) DPRINTF("%02x%02x:%02x%02x",(addr)->u8[3], (addr)->u8[2], (addr)->u8[1], (addr)->u8[0])
 #define PRINT2ADDR(addr) PRINTF("%02x%02x:%02x%02x",(addr)->u8[3], (addr)->u8[2], (addr)->u8[1], (addr)->u8[0])
 #else
+#define DPRINT2ADDR(addr) DPRINTF("%02x%02x",(addr)->u8[1], (addr)->u8[0])
 #define PRINT2ADDR(addr) PRINTF("%02x%02x",(addr)->u8[1], (addr)->u8[0])
 #endif
 struct proto_header {

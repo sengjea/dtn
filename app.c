@@ -66,7 +66,7 @@ dtn_recv(struct dtn_conn *c, const rimeaddr_t *from, uint16_t packet_id)
 { 
   static uint8_t stats = 0;
   stats++;
-  PRINTF("dtn_recv: { packet_id:%d stats:%d }\n", packet_id, stats);
+  DPRINTF("dtn_recv: { packet_id:%d stats:%d }\n", packet_id, stats);
   FLASH_LED(LEDS_BLUE);
 }
 static void
