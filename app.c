@@ -109,7 +109,7 @@ PROCESS_THREAD(dtn_process, ev, data)
   while(1) {
 
 #ifndef DTN_BUTTON_FIRE
-    etimer_set(&et, CLOCK_SECOND * 3 + random_rand() % (CLOCK_SECOND * 5));
+    etimer_set(&et, (3 + (random_rand() % 5)) * CLOCK_SECOND);
     PROCESS_WAIT_EVENT_UNTIL(etimer_expired(&et));
 #else
     PRINTF("<press button to fire>\n");

@@ -29,6 +29,9 @@
 #define DPRINT2ADDR(addr) DPRINTF("%02x%02x",(addr)->u8[1], (addr)->u8[0])
 #define PRINT2ADDR(addr) PRINTF("%02x%02x",(addr)->u8[1], (addr)->u8[0])
 #endif
+/**
+ * @brief struct for the message header as defined by the DTN protocol. This is to be sent before any payload from the user
+ */
 struct proto_header {
   uint8_t version;
   uint8_t magic[2];
@@ -43,10 +46,16 @@ struct msg_header {
 
 struct dtn_conn;
 
+/**
+ * @brief struct for holding the function pointer references for callbacks
+ */
 struct dtn_callbacks {
 	void (* recv)(struct dtn_conn *c, const rimeaddr_t *from, uint16_t packet_id);
 };
 
+/**
+ * @brief struct to hold the details of the DTN connection. All values here are initialised during dtn_open.
+ */
 struct dtn_conn {
 	struct broadcast_conn spray_c;
 	struct unicast_conn request_c;
@@ -66,7 +75,7 @@ struct dtn_conn {
  * @param cb	A struct dtn_callbacks with a function pointer for callbacks
  *
  * 		This function opens a new DTN connection using channel, channel + 1 and channel + 2.
- * 		The caller must have allocated memory for a struct dtn_conn before passing a pointer to it
+ * 		The caller must have allocated memory for a struct dtn_conn before passing a pointer to it.
  */
 void dtn_open(struct dtn_conn *c, uint16_t channel,
 		const struct dtn_callbacks *cb);
