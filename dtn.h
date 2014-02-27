@@ -5,15 +5,11 @@
 #include "net/rime/rimeaddr.h"
 #include <stdio.h>
 
-#ifndef DTN_CONF_DEFAULT_L_COPIES
-#define DTN_L_COPIES 8
-#else
-#define DTN_L_COPIES DTN_CONF_DEFAULT_L_COPIES
-#endif
-
 #define DEBUG 0
-#define DTN_QUEUE_MAX 5
-#define DTN_MAX_LIFETIME 60
+
+#define DTN_L_COPIES 8 /*!< Initial L copies a packet Originator would hold*/
+#define DTN_QUEUE_MAX 5 /*!< Length of packetqueue items to keep */
+#define DTN_MAX_LIFETIME 60 /*!< Total number of time in seconds a packet is expected to spend in the packet queue */
 #define DTN_SPRAY_CHANNEL 128 
 #define DTN_SPRAY_DELAY 4
 #define DTN_RTX 3
@@ -60,15 +56,43 @@ struct dtn_conn {
 	uint8_t seqno;
   struct ctimer t;
   struct queuebuf *handoff_qb;
-//struct msg_header *hdr;
 };
 
+/**
+ * @brief	Opens a new DTN Connection 
+ *
+ * @param c	A pointer to a struct dtn_conn
+ * @param channel  The lowest channel on which it and the following two channels the connection will operate
+ * @param cb	A struct dtn_callbacks with a function pointer for callbacks
+ *
+ * 		This function opens a new DTN connection using channel, channel + 1 and channel + 2.
+ * 		The caller must have allocated memory for a struct dtn_conn before passing a pointer to it
+ */
 void dtn_open(struct dtn_conn *c, uint16_t channel,
 		const struct dtn_callbacks *cb);
 
+/**
+ * @brief 	Closes an existing DTN Connection
+ *
+ * @param c	A pointer to the struct dtn_conn
+ * 		
+ * 		c should point to the same struct dtn_conn that was passed into dtn_open
+ * 		This function closes all three channels at once so they may be used for other purposes thereafter
+ */
 void dtn_close(struct dtn_conn *c);
 
-void dtn_send(struct dtn_conn *c, const rimeaddr_t *dest);
+/**
+ * @brief 	Attempts to send a packet via the delay tolerant network
+ *
+ * @param c	A pointer to the struct dtn_conn on which the packet would be sent
+ * @param dest	A pointer to the rimeaddr_t of the destination of the packet.
+ *
+ * @return	Non-zero if the packet could be queued for sending.
+ * 		
+ * 		The packet must have been formed in the packetbuf before this function
+ * 		is called
+ *
+ */
+int dtn_send(struct dtn_conn *c, const rimeaddr_t *dest);
 
-int dtn_is_busy(struct dtn_conn *c);
 #endif //__DTN_H__

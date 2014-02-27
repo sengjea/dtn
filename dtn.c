@@ -51,15 +51,6 @@
 #include <string.h>
 
 static void dtn_service_queue(void *vc);
-/*
-   static const struct packetbuf_attrlist spray_attributes[] =
-   { DTN_SPRAY_ATTRIBUTES PACKETBUF_ATTR_LAST };
-   static const struct packetbuf_attrlist request_attributes[] =
-   { DTN_REQUEST_ATTRIBUTES PACKETBUF_ATTR_LAST };
-   static const struct packetbuf_attrlist handoff_attributes[] =
-   { DTN_HANDOFF_ATTRIBUTES PACKETBUF_ATTR_LAST };
-   */
-
 
 PACKETQUEUE(dtn_queue,DTN_QUEUE_MAX);
 /*
@@ -73,7 +64,7 @@ prepend_header(struct dtn_conn *c, struct msg_header *msg_ptr)
 }
 
 /*
- * Packet comparison functions
+ * Packet Header comparison functions
  * ---------------------------------------------------------------------------*/
   static int
 packet_is_for_me(struct msg_header *a)
@@ -87,18 +78,6 @@ packet_is_from_me(struct msg_header *a)
   return (rimeaddr_cmp(&(a->esender),
         &rimeaddr_node_addr));
 }
-
-/*
- * Packet Queue functions
- * ---------------------------------------------------------------------------*/
-
-//returns 1 if same else 0
-  static int
-msg_header_cmp(struct msg_header *a, struct msg_header *b)
-{
-  return (a->epacketid == b->epacketid &&
-      rimeaddr_cmp(&(a->esender), &(b->esender)));
-}
   static int
 packet_is_from_destination(struct msg_header *a)
 {
@@ -106,11 +85,23 @@ packet_is_from_destination(struct msg_header *a)
         packetbuf_addr(PACKETBUF_ADDR_SENDER)));
 }
   
+  static int
+msg_header_cmp(struct msg_header *a, struct msg_header *b)
+{
+  return (a->epacketid == b->epacketid &&
+      rimeaddr_cmp(&(a->esender), &(b->esender)));
+}
+
+/*
+ * Packet Queue functions
+ * ---------------------------------------------------------------------------*/
+  
   struct packetqueue_item *
 packetqueue_next(struct packetqueue_item *i)
 {
   return list_item_next(i);
 }
+
   void
 packetqueue_refresh(struct packetqueue_item *i)
 {
@@ -126,6 +117,7 @@ packetqueue_remove_item(struct packetqueue_item *i)
   ctimer_stop(&i->lifetimer);
   memb_free(q->memb, i);
 }
+
   static struct packetqueue_item *
 find_item_in_queue(struct packetqueue *q, struct msg_header *a)
 {
@@ -138,6 +130,7 @@ find_item_in_queue(struct packetqueue *q, struct msg_header *a)
   }
   return NULL;
 }
+
   static struct packetqueue_item *
 find_least_critical(struct packetqueue *q)
 {
@@ -181,7 +174,6 @@ dtn_enqueue_packetbuf(struct packetqueue *q)
 print_raw_packetbuf(void)
 {
   uint16_t i;
-  DPRINTF("\n");
   for(i = 0; i < packetbuf_hdrlen(); i++) {
     DPRINTF("%02x ", *(char *)(packetbuf_hdrptr() + i));
   }
@@ -191,6 +183,7 @@ print_raw_packetbuf(void)
   }
   DPRINTF("[%d]\n", (int16_t) (packetbuf_dataptr() - packetbuf_hdrptr()));
 }
+
   static void
 print_queuebuf(struct queuebuf *qb)
 {
@@ -249,10 +242,40 @@ print_packetbuf(struct msg_header *a, char *func)
   } else {
     PRINTF(", X, X, X, X\n");
   }
-  //print_raw_packetbuf();
+  print_raw_packetbuf();
 }
-/*---------------------------------------------------------------------------*/
 
+/*---------------------------------------------------------------------------*/
+  static void
+dtn_service_queue(void *vc)
+{
+  struct dtn_conn *c = (struct dtn_conn *) vc;
+  struct queuebuf *qb;
+  struct packetqueue_item *p;
+  struct msg_header *qb_hdr;
+  rimeaddr_t to;
+  
+  for (p = packetqueue_first(c->q); p != NULL; p = packetqueue_next(p)) {
+      qb = packetqueue_queuebuf(p);
+      if (qb == NULL) continue;
+      queuebuf_to_packetbuf(qb);
+      qb_hdr = (struct msg_header *) queuebuf_dataptr(qb);
+      if (qb_hdr->num_copies == 0) {
+        //handoff was never received. resend_request (once only);
+        qb_hdr->num_copies = 1;
+        packetbuf_set_datalen(sizeof(struct msg_header));
+        rimeaddr_copy(&to,packetbuf_addr(PACKETBUF_ADDR_SENDER));
+        unicast_send(&c->request_c, &to);
+        print_packetbuf(packetbuf_dataptr(),"request");
+      } else {
+        broadcast_send(&c->spray_c);
+        print_packetbuf(packetbuf_dataptr(),"spray");
+      }
+  }
+  wind_timer(c);
+}
+
+/*---------------------------------------------------------------------------*/
   static void
 wind_timer(struct dtn_conn *c)
 {
@@ -272,7 +295,6 @@ sent_handoff(struct runicast_conn *ru_c, const rimeaddr_t *to , uint8_t rtx)
       offsetof(struct dtn_conn, handoff_c));
   struct msg_header *qb_hdr;
   if (c->handoff_qb != NULL) {
-    //TODO: What if queuebuf dies before this?
     DPRINTF("sent_handoff\n");
     qb_hdr = queuebuf_dataptr(c->handoff_qb);
     if (qb_hdr->num_copies > 1) {
@@ -373,7 +395,7 @@ recv_spray(struct broadcast_conn *b_c, const rimeaddr_t *from)
   } else {
     pb_hdr->num_copies = 0;
     if (!dtn_enqueue_packetbuf(c->q)) return;
-    //PRINTF("queued ");
+    DPRINTF("queued ");
   }
 
   packetbuf_copyfrom(&spray_hdr, sizeof(struct msg_header));
@@ -408,7 +430,7 @@ dtn_close(struct dtn_conn *c)
   runicast_close(&c->handoff_c);
 }
 /*---------------------------------------------------------------------------*/
-  void
+  int
 dtn_send(struct dtn_conn *c, const rimeaddr_t *dest)
 {
   static uint16_t seqno = 0;
@@ -426,46 +448,12 @@ dtn_send(struct dtn_conn *c, const rimeaddr_t *dest)
     broadcast_send(&c->spray_c);
     print_packetbuf(packetbuf_dataptr(),"spray");
     wind_timer(c);
+    return 1;
   } else {
     seqno--;
+    return 0;
   }
 }
 /*---------------------------------------------------------------------------*/
 
-  static void
-dtn_service_queue(void *vc)
-{
-  struct dtn_conn *c = (struct dtn_conn *) vc;
-  struct queuebuf *qb;
-  struct packetqueue_item *p;
-  struct msg_header *qb_hdr;
-  rimeaddr_t to;
-  
-  for (p = packetqueue_first(c->q); p != NULL; p = packetqueue_next(p)) {
-      qb = packetqueue_queuebuf(p);
-      if (qb == NULL) continue;
-      queuebuf_to_packetbuf(qb);
-      qb_hdr = (struct msg_header *) queuebuf_dataptr(qb);
-      if (qb_hdr->num_copies == 0) {
-        //If num_copies == 0, handoff was never received. resend_request;
-        qb_hdr->num_copies = 1;
-        //packetqueue_enqueue_packetbuf(c->q, DTN_MAX_LIFETIME * CLOCK_SECOND, c);
-        packetbuf_set_datalen(sizeof(struct msg_header));
-        rimeaddr_copy(&to,packetbuf_addr(PACKETBUF_ADDR_SENDER));
-        unicast_send(&c->request_c, &to);
-        print_packetbuf(packetbuf_dataptr(),"request");
-      } else {
-        /*
-        if (c->hdr->num_copies > 1) {
-            packetqueue_refresh(p);
-            //packetqueue_dequeue(c->q);
-        }
-        */
-        broadcast_send(&c->spray_c);
-        print_packetbuf(packetbuf_dataptr(),"spray");
-      }
-  }
-  wind_timer(c);
-}
-/*---------------------------------------------------------------------------*/
 /** @} */
