@@ -47,12 +47,12 @@
 #endif
 
 #define TOTAL_MOTES 32
-#define ORIGIN_ADDR 9
-#define DEST_ADDR 1
-#define DTN_BUTTON_FIRE
+#define ORIGIN_ADDR 0xb
+#define DEST_ADDR 0xf
+//#define DTN_BUTTON_FIRE
 #ifdef CONTIKI_TARGET_ORISENPRIME
 #define FLASH_LED(l) {leds_on(l); clock_delay_msec(50); leds_off(l); clock_delay_msec(50);}
-#define DTN_LOW_POWER set_power(0x0)
+#define DTN_LOW_POWER set_power(0x1)
 #else
 #define FLASH_LED(l) //{leds_on(l); clock_delay(400); leds_off(l); clock_delay(400);}
 #endif
@@ -109,7 +109,7 @@ PROCESS_THREAD(dtn_process, ev, data)
   while(1) {
 
 #ifndef DTN_BUTTON_FIRE
-    etimer_set(&et, (3 + (random_rand() % 5)) * CLOCK_SECOND);
+    etimer_set(&et, (8 + (random_rand() % 15)) * CLOCK_SECOND);
     PROCESS_WAIT_EVENT_UNTIL(etimer_expired(&et));
 #else
     PRINTF("<press button to fire>\n");
@@ -123,7 +123,7 @@ PROCESS_THREAD(dtn_process, ev, data)
 #else
       make_random_addr(&dest_addr);
 #endif
-      packetbuf_copyfrom("Seng", 5);
+      packetbuf_copyfrom("sengjea", 8);
       dtn_send(&dtn_connection, &dest_addr);
       FLASH_LED(LEDS_GREEN);
   }

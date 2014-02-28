@@ -7,11 +7,11 @@
 
 #define DEBUG 0
 
-#define DTN_L_COPIES 8 /*!< Initial L copies a packet Originator would hold*/
+#define DTN_L_COPIES 32 /*!< Initial L copies a packet Originator would hold*/
 #define DTN_QUEUE_MAX 5 /*!< Length of packetqueue items to keep */
 #define DTN_MAX_LIFETIME 60 /*!< Total number of time in seconds a packet is expected to spend in the packet queue */
 #define DTN_SPRAY_CHANNEL 128 
-#define DTN_SPRAY_DELAY 4
+#define DTN_SPRAY_DELAY 10
 #define DTN_RTX 3
 #define DTN_HDR_VERSION 1
 

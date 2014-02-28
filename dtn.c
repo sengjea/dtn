@@ -250,6 +250,21 @@ print_packetbuf(struct msg_header *a, char *func)
 /* ---------------------------------------------------------------------------*/
 
 /**
+ * @brief This function resets the ctimer to call dtn_service_queue again
+ *
+ */
+  static void
+wind_timer(struct dtn_conn *c)
+{
+  struct packetqueue_item *p = packetqueue_first(c->q);
+  if (p != NULL && ctimer_expired(&c->t)) {
+    DPRINTF("wind_timer\n");
+    ctimer_set(&c->t, ((DTN_SPRAY_DELAY / 2) + random_rand() % DTN_SPRAY_DELAY) * CLOCK_SECOND, dtn_service_queue, c);
+  }
+  print_packetqueue(c->q);  
+}
+
+/**
  * @brief This function services the packetqueue.
  *
  * When called, this function iterates through each spray packet inside the queue
@@ -272,34 +287,19 @@ dtn_service_queue(void *vc)
       if (qb == NULL) continue;
       queuebuf_to_packetbuf(qb);
       qb_hdr = (struct msg_header *) queuebuf_dataptr(qb);
-      if (qb_hdr->num_copies == 0) {
-        qb_hdr->num_copies = 1; /*! num_copies set to 1 here to ensure that only 1 repeat request is sent*/
+      if (qb_hdr->num_copies > 0) {
+        broadcast_send(&c->spray_c);
+        print_packetbuf(packetbuf_dataptr(),"spray");
+      /*} else {
         packetbuf_set_datalen(sizeof(struct msg_header));
         rimeaddr_copy(&to,packetbuf_addr(PACKETBUF_ADDR_SENDER));
         unicast_send(&c->request_c, &to);
-        print_packetbuf(packetbuf_dataptr(),"request");
-      } else {
-        broadcast_send(&c->spray_c);
-        print_packetbuf(packetbuf_dataptr(),"spray");
+        print_packetbuf(packetbuf_dataptr(),"request");*/
       }
   }
   wind_timer(c);
 }
 
-/**
- * @brief This function resets the ctimer to call dtn_service_queue again
- *
- */
-  static void
-wind_timer(struct dtn_conn *c)
-{
-  struct packetqueue_item *p = packetqueue_first(c->q);
-  if (p != NULL && ctimer_expired(&c->t)) {
-    DPRINTF("wind_timer\n");
-    ctimer_set(&c->t, ((DTN_SPRAY_DELAY / 2) + random_rand() % DTN_SPRAY_DELAY) * CLOCK_SECOND, dtn_service_queue, c);
-  }
-  print_packetqueue(c->q);  
-}
 
 /*
  * RUnicast callbacks for handling handoff messages
